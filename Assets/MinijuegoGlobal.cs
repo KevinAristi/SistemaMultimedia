@@ -4,16 +4,23 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-
 public class MinijuegoGlobal : MonoBehaviour
 {
     [System.Serializable]
     public class MisionEntrega
     {
         public string nombreDeLaMision;
+
+        [Header("Referencias de UI")]
         public Button botonObjeto;
         public Button botonPersona;
         public GameObject objetoVisualEnInventario;
+
+        [Header("Textos Personalizados")]
+        [TextArea(2, 4)] public string mensajeAlRecoger;
+        [TextArea(2, 4)] public string mensajeAlEntregar;
+        [TextArea(2, 4)] public string mensajeSiNoTiene;
+
         [HideInInspector] public bool yaLoTiene = false;
         [HideInInspector] public bool completada = false;
     }
@@ -22,76 +29,101 @@ public class MinijuegoGlobal : MonoBehaviour
     public List<MisionEntrega> misiones = new List<MisionEntrega>();
 
     [Header("Paneles de Control")]
-    public GameObject panelFinalizacion; // Solo se activa una vez al ganar
+    public GameObject panelFinalizacion;
+    public GameObject panelTextoFeedback; // <--- EL NUEVO PANEL DE FONDO
 
     [Header("Feedback de Usuario")]
     public TextMeshProUGUI textoInformativo;
-    public float duracionTexto = 1.0f;
+    public float duracionTexto = 2.0f; // Te sugiero 2 segundos para que alcancen a leer
 
-    // --- ESTO ES LO QUE BUSCAS ---
-    // Al ser 'static', otros scripts pueden acceder a ella fácilmente.
     public static bool MinijuegoFinalizadoGlobal = false;
-
     private Coroutine rutinaTexto;
 
     void Start()
     {
-        // Si el juego ya se completó antes (en un cambio de escena, por ejemplo)
-        // podrías chequearlo aquí. Por ahora, inicia en false.
         MinijuegoFinalizadoGlobal = false;
 
-        foreach (var mision in misiones)
-        {
-            if (mision.botonObjeto != null)
-                mision.botonObjeto.onClick.AddListener(() => RecogerObjeto(mision));
+        // Asegurarnos de que el panel y el texto empiecen apagados
+        if (panelTextoFeedback != null) panelTextoFeedback.SetActive(false);
+        if (textoInformativo != null) textoInformativo.text = "";
 
-            if (mision.botonPersona != null)
-                mision.botonPersona.onClick.AddListener(() => IntentarEntrega(mision));
+        List<Button> botonesRegistrados = new List<Button>();
+
+        foreach (var m in misiones)
+        {
+            MisionEntrega misionLocal = m;
+
+            if (misionLocal.botonObjeto != null)
+                misionLocal.botonObjeto.onClick.AddListener(() => RecogerObjeto(misionLocal));
+
+            if (misionLocal.botonPersona != null && !botonesRegistrados.Contains(misionLocal.botonPersona))
+            {
+                botonesRegistrados.Add(misionLocal.botonPersona);
+                misionLocal.botonPersona.onClick.AddListener(() => ProcesarEntregaGeneral(misionLocal.botonPersona));
+            }
         }
 
         if (panelFinalizacion != null) panelFinalizacion.SetActive(false);
     }
 
-    // He eliminado la función de "IntentarAbrirMinijuego" para que 
-    // uses tus propios botones de navegación normales para abrir paneles.
+    // ... (Mantengo las funciones RecogerObjeto, ProcesarEntregaGeneral y VerificarFinalizacion igual que antes) ...
 
     void RecogerObjeto(MisionEntrega mision)
     {
-        // Solo podemos recoger si el juego NO ha terminado
         if (!mision.yaLoTiene && !MinijuegoFinalizadoGlobal)
         {
             mision.yaLoTiene = true;
             mision.botonObjeto.gameObject.SetActive(false);
             if (mision.objetoVisualEnInventario != null) mision.objetoVisualEnInventario.SetActive(true);
-
-            ActualizarTexto("Recogiste: " + mision.nombreDeLaMision);
+            ActualizarTexto(mision.mensajeAlRecoger);
         }
     }
 
-    void IntentarEntrega(MisionEntrega mision)
+    void ProcesarEntregaGeneral(Button npcPresionado)
     {
-        // Si ya terminó el minijuego global, el NPC podría hacer otra cosa (diálogo extra)
         if (MinijuegoFinalizadoGlobal)
         {
-            ActualizarTexto("¡Gracias de nuevo por tu ayuda!");
+            ActualizarTexto("¡Gracias por todo tu esfuerzo!");
             return;
         }
 
-        if (mision.completada) return;
+        MisionEntrega misionParaCompletar = null;
+        string mensajeDeError = "";
 
-        if (mision.yaLoTiene)
+        foreach (var m in misiones)
         {
-            mision.completada = true;
-            mision.yaLoTiene = false;
-            if (mision.objetoVisualEnInventario != null) mision.objetoVisualEnInventario.SetActive(false);
+            if (m.botonPersona == npcPresionado && !m.completada)
+            {
+                if (m.yaLoTiene)
+                {
+                    misionParaCompletar = m;
+                    break;
+                }
+                else
+                {
+                    mensajeDeError = m.mensajeSiNoTiene;
+                }
+            }
+        }
 
-            ActualizarTexto("¡Entregado correctamente!");
-            VerificarFinalizacion();
-        }
-        else
+        if (misionParaCompletar != null)
         {
-            ActualizarTexto("No tienes lo que necesito...");
+            CompletarMision(misionParaCompletar);
         }
+        else if (!string.IsNullOrEmpty(mensajeDeError))
+        {
+            ActualizarTexto(mensajeDeError);
+        }
+    }
+
+    void CompletarMision(MisionEntrega mision)
+    {
+        mision.completada = true;
+        mision.yaLoTiene = false;
+        if (mision.objetoVisualEnInventario != null) mision.objetoVisualEnInventario.SetActive(false);
+
+        ActualizarTexto(mision.mensajeAlEntregar);
+        VerificarFinalizacion();
     }
 
     void VerificarFinalizacion()
@@ -104,23 +136,31 @@ public class MinijuegoGlobal : MonoBehaviour
 
         if (todasListas)
         {
-            MinijuegoFinalizadoGlobal = true; // SE ACTIVA LA SEÑAL GLOBAL
+            MinijuegoFinalizadoGlobal = true;
             if (panelFinalizacion != null) panelFinalizacion.SetActive(true);
             ActualizarTexto("¡Misión cumplida!");
         }
     }
 
+    // --- LÓGICA DE TEXTO Y PANEL ACTUALIZADA ---
     void ActualizarTexto(string mensaje)
     {
-        if (textoInformativo == null) return;
+        if (string.IsNullOrEmpty(mensaje)) return;
+
         if (rutinaTexto != null) StopCoroutine(rutinaTexto);
         rutinaTexto = StartCoroutine(MostrarYBorrarTexto(mensaje));
     }
 
     IEnumerator MostrarYBorrarTexto(string mensaje)
     {
-        textoInformativo.text = mensaje;
+        // Encendemos ambos
+        if (panelTextoFeedback != null) panelTextoFeedback.SetActive(true);
+        if (textoInformativo != null) textoInformativo.text = mensaje;
+
         yield return new WaitForSeconds(duracionTexto);
-        textoInformativo.text = "";
+
+        // Apagamos ambos
+        if (textoInformativo != null) textoInformativo.text = "";
+        if (panelTextoFeedback != null) panelTextoFeedback.SetActive(false);
     }
 }
